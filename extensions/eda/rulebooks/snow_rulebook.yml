@@ -1,12 +1,13 @@
-sources:
-  - ansible.eda.webhook:
-      host: 0.0.0.0
-      port: 5001
-
-rules:
-  - name: handle_snow_incident
-    condition: event.payload.priority == "1"
-    action:
-      run_job_template:
-        name: "Handle High Priority Incident"
-        organization: "Default"
+- name: snow_rulebook
+  hosts: []   # <-- Empty list, prevents "hosts" requirement from breaking
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5001
+  rules:
+    - name: handle_snow_incident
+      condition: event.payload.priority == "1"
+      action:
+        run_job_template:
+          name: "Handle High Priority Incident"
+          organization: "Default"
