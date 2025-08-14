@@ -1,14 +1,18 @@
 ---
-- name: Debug incoming events
+- name: ServiceNow Incident Trigger
   hosts: all
   sources:
     - ansible.eda.webhook:
         host: 0.0.0.0
         port: 5001
+
   rules:
-    - name: Log all events
-      condition: true
+    - name: Create incident from ServiceNow webhook
+      condition: event.payload is defined
       action:
-        run_job_template:
-          name: debug-template
-          organization: Default
+        run_playbook:
+          name: create_snow_incident.yml
+          extra_vars:
+            incident_id: "{{ event.payload.incident_id | default('INC0001') }}"
+            priority: "{{ event.payload.priority | default('medium') }}"
+            short_description: "{{ event.payload.short_description | default('Auto-created incident') }}"
