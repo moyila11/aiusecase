@@ -1,0 +1,15 @@
+---
+- name: Handle Datadog Alerts
+  hosts: all
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5001
+        endpoint: /datadog   # <-- so it's separate from SNOW if you want
+  rules:
+    - name: High CPU alert
+      condition: event.alert_type is defined and event.alert_type == "error"
+      action:
+        run_job_template:
+          name: Handle High CPU Incident
+          organization: Default
