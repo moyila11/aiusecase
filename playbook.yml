@@ -1,0 +1,9 @@
+---
+- name: Sample playbook triggered by EDA
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Print debug message
+      ansible.builtin.debug:
+        msg: "EDA rulebook triggered this job successfully 🎉"
