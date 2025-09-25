@@ -1,0 +1,21 @@
+---
+- name: Teardown sandbox by tag
+  hosts: localhost
+  gather_facts: false
+  vars:
+    tag_name: "{{ tag_name | default('sandbox-') }}"
+    region: us-east-1
+  tasks:
+    - name: Find instances with tag Name starting with sandbox-
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        filters:
+          "tag:Name": "{{ tag_name }}*"
+      register: found
+
+    - name: Terminate instances
+      amazon.aws.ec2:
+        state: absent
+        instance_ids: "{{ found.instances | map(attribute='instance_id') | list }}"
+        region: "{{ region }}"
+      when: found.instances | length > 0
