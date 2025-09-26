@@ -1,66 +1,62 @@
 ---
-- name: Provision sandbox VM and install dev tools
+- name: Provision RHEL Sandbox in AWS
   hosts: localhost
-  gather_facts: false
+  connection: local
+  gather_facts: no
+
   vars:
+    instance_type: t3.micro
+    key_name: aap-kp
     region: us-east-1
-    instance_type: "{{ instance_type | default('t3.medium') }}"
-    ami: "{{ ami | default('ami-0abcdef1234567890') }}"   # replace with valid AMI
-    key_name: "{{ key_name | default('my-ssh-key') }}"
-    security_group: "{{ security_group | default('sg-xxxx') }}"
-    subnet_id: "{{ subnet_id | default(omit) }}"
-    tags:
-      Name: "sandbox-{{ requested_by | default('dev') }}-{{ lookup('pipe','date +%s') }}"
-    tools:
-      - git
-      - python3
-      - docker
+    security_group: default
+    subnet_id: subnet-xxxxxx     # Replace with real subnet
+    image_id: ami-xxxxxxxx       # Replace with valid RHEL AMI
+
   tasks:
     - name: Launch EC2 instance
       amazon.aws.ec2_instance:
-        name: "{{ tags.Name }}"
-        state: present
-        instance_type: "{{ instance_type }}"
-        image_id: "{{ ami }}"
+        name: "rhel-sandbox"
         key_name: "{{ key_name }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ image_id }}"
         region: "{{ region }}"
-        tags: "{{ tags }}"
+        wait: yes
         security_group: "{{ security_group }}"
         subnet_id: "{{ subnet_id }}"
-        wait: yes
       register: ec2
 
-    - name: Wait for SSH to be available
-      wait_for:
-        host: "{{ ec2.instances[0].public_ip_address }}"
-        port: 22
-        timeout: 300
+    - name: Show instance details
+      debug:
+        var: ec2
 
-    - name: Add new host to dynamic group
+    - name: Add new instance to inventory
       add_host:
         name: "{{ ec2.instances[0].public_ip_address }}"
-        groups: provisioned_sandbox
-        ansible_user: ec2-user   # adjust per AMI
-        ansible_ssh_private_key_file: "{{ lookup('env','HOME') + '/.ssh/' + key_name + '.pem' }}" # optional in ad-hoc runs
+        groups: rhel_sandbox
+        ansible_user: ec2-user
+        ansible_ssh_private_key_file: "{{ lookup('env','HOME') }}/Downloads/aap-kp.pem"
 
-- name: Configure sandbox (run against provisioned host)
-  hosts: provisioned_sandbox
-  become: true
+# Second play → configure the new instance
+- name: Configure Sandbox
+  hosts: rhel_sandbox
+  become: yes
   tasks:
-    - name: Install dev tools (RHEL example)
-      package:
-        name: "{{ tools }}"
+    - name: Install developer tools
+      yum:
+        name:
+          - git
+          - python3
+          - docker
         state: present
 
-    - name: Ensure docker enabled and started
+    - name: Ensure Docker is started
       service:
         name: docker
         state: started
         enabled: yes
 
-    - name: Create a marker file
+    - name: Create marker file
       copy:
         dest: /etc/sandbox_info.txt
         content: |
-          Sandbox created by {{ requested_by }} on {{ ansible_date_time.iso8601 }}
-          Tools: {{ tools | join(', ') }}
+          Sandbox provisioned via AAP on {{ ansible_date_time.iso8601 }}
