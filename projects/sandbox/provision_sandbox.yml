@@ -9,8 +9,8 @@
     key_name: aap-kp
     region: us-east-1
     security_group: default
-    subnet_id: subnet-xxxxxx     # Replace with real subnet
-    image_id: ami-xxxxxxxx       # Replace with valid RHEL AMI
+    subnet_id: subnet-0ce1bc568df6dc46b   
+    image_id: ami-0dfc569a8686b9320      
 
   tasks:
     - name: Launch EC2 instance
