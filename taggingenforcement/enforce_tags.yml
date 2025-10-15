@@ -1,0 +1,19 @@
+- name: Enforce tags on servers
+  hosts: all
+  become: yes
+  gather_facts: false
+  vars:
+    required_tags:
+      owner: "platform-team"
+      environment: "production"
+      cost_center: "CC1234"
+  tasks:
+    - name: Make sure /etc/tags folder exists
+      file:
+        path: /etc/tags
+        state: directory
+
+    - name: Write tags file
+      copy:
+        dest: /etc/tags/resource-tags.yml
+        content: "{{ required_tags | to_nice_yaml }}"
