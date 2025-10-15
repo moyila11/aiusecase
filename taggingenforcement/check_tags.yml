@@ -1,0 +1,13 @@
+- name: Check tag file on each server
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Check if tag file exists
+      stat:
+        path: /etc/tags/resource-tags.yml
+      register: tagfile
+
+    - name: Show result
+      debug:
+        msg: >
+          {{ inventory_hostname }} tag_file_exists={{ tagfile.stat.exists }}
