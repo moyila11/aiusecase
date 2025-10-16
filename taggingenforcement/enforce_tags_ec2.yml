@@ -1,0 +1,32 @@
+- name: Enforce EC2 tags
+  hosts: all
+  gather_facts: false
+  vars:
+    required_tags:
+      owner: "platform-team"
+      environment: "production"
+      cost_center: "CC1234"
+  tasks:
+    - name: Resolve instance id
+      community.aws.ec2_instance_info:
+        region: "{{ aws_region | default('us-east-1') }}"
+        instance_ids: "{{ ec2_instance_id | default(omit) }}"
+        filters:
+          "private-ip-address": "{{ ec2_private_ip | default(omit) }}"
+      register: inst_info
+
+    - name: Fail if instance not found
+      fail:
+        msg: "EC2 instance not found for host {{ inventory_hostname }}"
+      when: inst_info.instances | length == 0
+
+    - name: Ensure tags are present (CreateTags)
+      community.aws.ec2_tag:
+        region: "{{ aws_region | default('us-east-1') }}"
+        resource: "{{ inst_info.instances[0].instance_id }}"
+        tags: "{{ required_tags }}"
+        state: present
+
+    - name: Report action
+      debug:
+        msg: "Tags applied to {{ inst_info.instances[0].instance_id }} : {{ required_tags }}"
