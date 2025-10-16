@@ -1,0 +1,40 @@
+- name: Check EC2 tags (report-only)
+  hosts: all
+  gather_facts: false
+  vars:
+    required_tags:
+      owner: "platform-team"
+      environment: "production"
+      cost_center: "CC1234"
+  tasks:
+    - name: Get instance info by instance_id (if provided)
+      community.aws.ec2_instance_info:
+        region: "{{ aws_region | default('us-east-1') }}"
+        instance_ids: "{{ ec2_instance_id | default(omit) }}"
+      register: inst_info
+      when: ec2_instance_id is defined
+
+    - name: Get instance info by private IP (if ec2_instance_id not provided)
+      community.aws.ec2_instance_info:
+        region: "{{ aws_region | default('us-east-1') }}"
+        filters:
+          "private-ip-address": "{{ ec2_private_ip }}"
+      register: inst_info
+      when: ec2_instance_id is not defined and ec2_private_ip is defined
+
+    - name: Fail if instance info not found
+      fail:
+        msg: "No EC2 instance found for this host. Set ec2_instance_id or ec2_private_ip."
+      when: inst_info.instances | length == 0
+
+    - name: Convert tags list to dict
+      set_fact:
+        current_tags: "{{ dict((inst_info.instances[0].tags | default([])) | map(attribute='Key') | list | zip((inst_info.instances[0].tags | default([])) | map(attribute='Value') | list) ) }}"
+
+    - name: Compute missing tags
+      set_fact:
+        missing_tags: "{{ required_tags.keys() | difference((current_tags | default({})).keys()) | list }}"
+
+    - name: Show compliance summary
+      debug:
+        msg: "Host={{ inventory_hostname }} Instance={{ inst_info.instances[0].instance_id }} Missing={{ missing_tags }} Current={{ current_tags }}"
