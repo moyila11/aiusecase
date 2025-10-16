@@ -1,3 +1,4 @@
+---
 - name: Check EC2 tags (report-only)
   hosts: all
   gather_facts: false
@@ -6,6 +7,7 @@
       owner: "platform-team"
       environment: "production"
       cost_center: "CC1234"
+
   tasks:
     - name: Get instance info by instance_id (if provided)
       community.aws.ec2_instance_info:
@@ -29,7 +31,7 @@
 
     - name: Convert tags list to dict
       set_fact:
-        current_tags: "{{ dict((inst_info.instances[0].tags | default([])) | map(attribute='Key') | list | zip((inst_info.instances[0].tags | default([])) | map(attribute='Value') | list) ) }}"
+        current_tags: "{{ dict((inst_info.instances[0].tags | default([])) | map(attribute='Key') | list | zip((inst_info.instances[0].tags | default([])) | map(attribute='Value') | list)) }}"
 
     - name: Compute missing tags
       set_fact:
