@@ -2,6 +2,10 @@
 - name: Enforce EC2 tags
   hosts: all
   gather_facts: false
+  collections:
+    - community.aws
+    - amazon.aws
+
   vars:
     required_tags:
       owner: "platform-team"
@@ -9,20 +13,20 @@
       cost_center: "CC1234"
 
   tasks:
-    - name: Resolve instance id
+    - name: Resolve instance (by id or private ip)
       community.aws.ec2_instance_info:
         region: "{{ aws_region | default('us-east-1') }}"
         instance_ids: "{{ ec2_instance_id | default(omit) }}"
         filters:
-          "private-ip-address": "{{ ec2_private_ip | default(omit) }}"
+          private-ip-address: "{{ ec2_private_ip | default(omit) }}"
       register: inst_info
 
     - name: Fail if instance not found
       fail:
         msg: "EC2 instance not found for host {{ inventory_hostname }}"
-      when: inst_info.instances | length == 0
+      when: inst_info.instances is not defined or (inst_info.instances | length == 0)
 
-    - name: Ensure tags are present (CreateTags)
+    - name: Ensure tags are present (create/update)
       community.aws.ec2_tag:
         region: "{{ aws_region | default('us-east-1') }}"
         resource: "{{ inst_info.instances[0].instance_id }}"
