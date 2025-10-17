@@ -2,6 +2,10 @@
 - name: Check EC2 tags (report-only)
   hosts: all
   gather_facts: false
+  collections:
+    - community.aws
+    - amazon.aws
+
   vars:
     required_tags:
       owner: "platform-team"
@@ -13,25 +17,39 @@
       community.aws.ec2_instance_info:
         region: "{{ aws_region | default('us-east-1') }}"
         instance_ids: "{{ ec2_instance_id | default(omit) }}"
-      register: inst_info
+      register: inst_info_by_id
       when: ec2_instance_id is defined
 
     - name: Get instance info by private IP (if ec2_instance_id not provided)
       community.aws.ec2_instance_info:
         region: "{{ aws_region | default('us-east-1') }}"
         filters:
-          "private-ip-address": "{{ ec2_private_ip }}"
-      register: inst_info
-      when: ec2_instance_id is not defined and ec2_private_ip is defined
+          private-ip-address: "{{ ec2_private_ip }}"
+      register: inst_info_by_ip
+      when:
+        - ec2_instance_id is not defined
+        - ec2_private_ip is defined
+
+    - name: Set inst_info from whichever result exists
+      set_fact:
+        inst_info: "{{ inst_info_by_id if (ec2_instance_id is defined) else inst_info_by_ip }}"
 
     - name: Fail if instance info not found
       fail:
         msg: "No EC2 instance found for this host. Set ec2_instance_id or ec2_private_ip."
-      when: inst_info.instances | length == 0
+      when: inst_info is not defined or (inst_info.instances is defined and (inst_info.instances | length) == 0)
 
-    - name: Convert tags list to dict
+    - name: Build current_tags dict from instance tags
       set_fact:
-        current_tags: "{{ dict((inst_info.instances[0].tags | default([])) | map(attribute='Key') | list | zip((inst_info.instances[0].tags | default([])) | map(attribute='Value') | list)) }}"
+        current_tags: >-
+          {{
+            dict(
+              (inst_info.instances[0].tags | default([])) | map(attribute='Key') | list
+              | zip(
+                  (inst_info.instances[0].tags | default([])) | map(attribute='Value') | list
+                )
+            )
+          }}
 
     - name: Compute missing tags
       set_fact:
