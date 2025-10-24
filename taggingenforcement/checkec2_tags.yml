@@ -14,6 +14,12 @@
       command: aws --version
       register: aws_cli_check
       ignore_errors: yes
+      
+    - name: Install AWS CLI
+      ansible.builtin.yum:
+        name: awscli
+        state: present
+      become: true
 
     - name: Fail if AWS CLI not installed
       fail:
