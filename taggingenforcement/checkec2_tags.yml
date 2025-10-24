@@ -10,54 +10,83 @@
       cost_center: "CC1234"
 
   tasks:
-    - name: Ensure AWS CLI is installed
-      command: aws --version
+    - name: Check if AWS CLI is available
+      ansible.builtin.command: aws --version
       register: aws_cli_check
       ignore_errors: yes
-      
-    - name: Install AWS CLI
+      changed_when: false
+
+    - name: Install AWS CLI via yum if missing (RHEL/CentOS)
       ansible.builtin.yum:
         name: awscli
         state: present
       become: true
-
-    - name: Fail if AWS CLI not installed
-      fail:
-        msg: "AWS CLI not found. Please install and configure it on this host."
       when: aws_cli_check.rc != 0
+      register: yum_install_result
+      changed_when: yum_install_result.changed
+
+    - name: Re-check AWS CLI after install
+      ansible.builtin.command: aws --version
+      register: aws_cli_check_after
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Fail if AWS CLI still not present
+      ansible.builtin.fail:
+        msg: "AWS CLI not found after attempted install. Please install it manually or ensure package repositories are available."
+      when: aws_cli_check_after.rc != 0
 
     - name: Get instance info by instance_id (if provided)
-      command: >
+      ansible.builtin.command: >
         aws ec2 describe-instances
         --region {{ aws_region }}
         --instance-ids {{ ec2_instance_id }}
-        --query "Reservations[].Instances[].Tags"
-      register: ec2_tags_by_id
+        --query "Reservations[].Instances[]"
+      register: ec2_info_by_id
       when: ec2_instance_id is defined
+      changed_when: false
 
     - name: Get instance info by private IP (if ec2_instance_id not provided)
-      command: >
+      ansible.builtin.command: >
         aws ec2 describe-instances
         --region {{ aws_region }}
         --filters "Name=private-ip-address,Values={{ ec2_private_ip }}"
-        --query "Reservations[].Instances[].Tags"
-      register: ec2_tags_by_ip
+        --query "Reservations[].Instances[]"
+      register: ec2_info_by_ip
       when:
         - ec2_instance_id is not defined
         - ec2_private_ip is defined
+      changed_when: false
 
-    - name: Set tags output
+    - name: Select instance info result
       set_fact:
-        ec2_tags_output: "{{ ec2_tags_by_id.stdout | from_json if (ec2_instance_id is defined) else ec2_tags_by_ip.stdout | from_json }}"
+        ec2_instances: >-
+          {{
+            ( (ec2_info_by_id.stdout | default('[]') | from_json) if (ec2_instance_id is defined) 
+              else (ec2_info_by_ip.stdout | default('[]') | from_json) )
+          }}
 
-    - name: Convert list of tags to dict
+    - name: Fail if instance not found
+      ansible.builtin.fail:
+        msg: "No EC2 instance found for this host. Set ec2_instance_id or ec2_private_ip (or check AWS permissions/region)."
+      when: ec2_instances | length == 0
+
+    - name: Build current_tags dict from instance tags (safe)
       set_fact:
-        current_tags: "{{ dict(ec2_tags_output | map(attribute='Key') | list | zip(ec2_tags_output | map(attribute='Value') | list)) }}"
+        current_tags: >-
+          {{
+            dict(
+              (ec2_instances[0].Tags | default([])) | map(attribute='Key') | list
+              | zip(
+                  (ec2_instances[0].Tags | default([])) | map(attribute='Value') | list
+                )
+            )
+          }}
 
     - name: Compute missing tags
       set_fact:
         missing_tags: "{{ required_tags.keys() | difference((current_tags | default({})).keys()) | list }}"
 
     - name: Show compliance summary
-      debug:
-        msg: "Host={{ inventory_hostname }} Missing={{ missing_tags }} Current={{ current_tags }}"
+      ansible.builtin.debug:
+        msg: "Host={{ inventory_hostname }} Instance={{ ec2_instances[0].InstanceId | default('unknown') }} Missing={{ missing_tags }} Current={{ current_tags }}"
