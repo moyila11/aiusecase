@@ -1,55 +1,52 @@
 ---
-- name: Check EC2 tags (report-only)
+- name: Check EC2 tags (report-only, no AWS collections)
   hosts: all
   gather_facts: false
-  collections:
-    - community.aws
-    - amazon.aws
-
   vars:
+    aws_region: "us-east-1"
     required_tags:
       owner: "platform-team"
       environment: "production"
       cost_center: "CC1234"
 
   tasks:
+    - name: Ensure AWS CLI is installed
+      command: aws --version
+      register: aws_cli_check
+      ignore_errors: yes
+
+    - name: Fail if AWS CLI not installed
+      fail:
+        msg: "AWS CLI not found. Please install and configure it on this host."
+      when: aws_cli_check.rc != 0
+
     - name: Get instance info by instance_id (if provided)
-      community.aws.ec2_instance_info:
-        region: "{{ aws_region | default('us-east-1') }}"
-        instance_ids: "{{ ec2_instance_id | default(omit) }}"
-      register: inst_info_by_id
+      command: >
+        aws ec2 describe-instances
+        --region {{ aws_region }}
+        --instance-ids {{ ec2_instance_id }}
+        --query "Reservations[].Instances[].Tags"
+      register: ec2_tags_by_id
       when: ec2_instance_id is defined
 
     - name: Get instance info by private IP (if ec2_instance_id not provided)
-      community.aws.ec2_instance_info:
-        region: "{{ aws_region | default('us-east-1') }}"
-        filters:
-          private-ip-address: "{{ ec2_private_ip }}"
-      register: inst_info_by_ip
+      command: >
+        aws ec2 describe-instances
+        --region {{ aws_region }}
+        --filters "Name=private-ip-address,Values={{ ec2_private_ip }}"
+        --query "Reservations[].Instances[].Tags"
+      register: ec2_tags_by_ip
       when:
         - ec2_instance_id is not defined
         - ec2_private_ip is defined
 
-    - name: Set inst_info from whichever result exists
+    - name: Set tags output
       set_fact:
-        inst_info: "{{ inst_info_by_id if (ec2_instance_id is defined) else inst_info_by_ip }}"
+        ec2_tags_output: "{{ ec2_tags_by_id.stdout | from_json if (ec2_instance_id is defined) else ec2_tags_by_ip.stdout | from_json }}"
 
-    - name: Fail if instance info not found
-      fail:
-        msg: "No EC2 instance found for this host. Set ec2_instance_id or ec2_private_ip."
-      when: inst_info is not defined or (inst_info.instances is defined and (inst_info.instances | length) == 0)
-
-    - name: Build current_tags dict from instance tags
+    - name: Convert list of tags to dict
       set_fact:
-        current_tags: >-
-          {{
-            dict(
-              (inst_info.instances[0].tags | default([])) | map(attribute='Key') | list
-              | zip(
-                  (inst_info.instances[0].tags | default([])) | map(attribute='Value') | list
-                )
-            )
-          }}
+        current_tags: "{{ dict(ec2_tags_output | map(attribute='Key') | list | zip(ec2_tags_output | map(attribute='Value') | list)) }}"
 
     - name: Compute missing tags
       set_fact:
@@ -57,4 +54,4 @@
 
     - name: Show compliance summary
       debug:
-        msg: "Host={{ inventory_hostname }} Instance={{ inst_info.instances[0].instance_id }} Missing={{ missing_tags }} Current={{ current_tags }}"
+        msg: "Host={{ inventory_hostname }} Missing={{ missing_tags }} Current={{ current_tags }}"
