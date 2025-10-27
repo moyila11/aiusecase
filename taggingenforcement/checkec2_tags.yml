@@ -10,16 +10,16 @@
       cost_center: "CC1234"
 
   tasks:
-    - name: Ensure AWS CLI is available on control node
-      ansible.builtin.command: aws --version
-      register: aws_cli_check
-      ignore_errors: yes
-      changed_when: false
+    # - name: Ensure AWS CLI is available on control node
+    #   ansible.builtin.command: aws --version
+    #   register: aws_cli_check
+    #   ignore_errors: yes
+    #   changed_when: false
 
-    - name: Fail early if AWS CLI missing on control node
-      ansible.builtin.fail:
-        msg: "AWS CLI not found on control node. Install it (pip install awscli or package) or run this play from a machine with aws configured."
-      when: aws_cli_check.rc != 0
+    # - name: Fail early if AWS CLI missing on control node
+    #   ansible.builtin.fail:
+    #     msg: "AWS CLI not found on control node. Install it (pip install awscli or package) or run this play from a machine with aws configured."
+    #   when: aws_cli_check.rc != 0
 
     - name: Describe instances by instance-id (for hosts that have ec2_instance_id)
       ansible.builtin.command: >
