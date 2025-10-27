@@ -1,34 +1,38 @@
 ---
-- name: Check EC2 instance tags
-  hosts: all
-  gather_facts: no
-
+- name: Check EC2 tags for single host (run on control node)
+  hosts: localhost
+  gather_facts: false
   vars:
+    aws_region: "us-east-1"
     required_tags:
-      - "owner"
-      - "environment"
-      - "cost_center"
+      - owner
+      - environment
+      - cost_center
 
   tasks:
-    - name: Get EC2 instance ID from metadata
-      shell: curl -s http://169.254.169.254/latest/meta-data/instance-id
-      register: instance_id
+    - name: Describe instance by private IP
+      ansible.builtin.command: >
+        aws ec2 describe-instances
+        --region {{ aws_region }}
+        --filters "Name=private-ip-address,Values=10.2.2.135"
+        --query "Reservations[].Instances[]"
+        --output json
+      register: inst_desc
+      changed_when: false
 
-    - name: Get tags for this EC2 instance
-      shell: |
-        aws ec2 describe-tags --filters "Name=resource-id,Values={{ instance_id.stdout }}" --region us-east-1 --output json
-      register: tag_output
+    - name: Fail if no instance found or AWS CLI error
+      ansible.builtin.fail:
+        msg: "No instance found or aws CLI error: {{ inst_desc.stderr | default('') }}"
+      when: inst_desc.rc != 0 or (inst_desc.stdout | default('[]') | from_json | length == 0)
 
-    - name: Parse tag names
+    - name: Extract tag keys
       set_fact:
-        tag_names: "{{ tag_output.stdout | from_json | json_query('Tags[].Key') }}"
+        tag_keys: "{{ (inst_desc.stdout | from_json)[0].Tags | default([]) | map(attribute='Key') | list }}"
 
-    - name: Check for missing tags
-      debug:
-        msg: "✅ All required tags are present: {{ required_tags }}"
-      when: required_tags | difference(tag_names) | length == 0
+    - name: Compute missing tags
+      set_fact:
+        missing_tags: "{{ required_tags | difference(tag_keys) }}"
 
-    - name: Report missing tags
-      debug:
-        msg: "❌ Missing tags: {{ required_tags | difference(tag_names) }}"
-      when: required_tags | difference(tag_names) | length > 0
+    - name: Show result
+      ansible.builtin.debug:
+        msg: "Instance i={{ (inst_desc.stdout | from_json)[0].InstanceId }} Missing={{ missing_tags }} Status={{ 'Compliant' if missing_tags|length == 0 else 'Non-compliant' }}"
