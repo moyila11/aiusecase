@@ -1,6 +1,6 @@
 ---
-- name: Check EC2 tags (report-only, no AWS collections)
-  hosts: all
+- name: Check EC2 tags (report-only) -- run from control node
+  hosts: localhost
   gather_facts: false
   vars:
     aws_region: "us-east-1"
@@ -10,83 +10,75 @@
       cost_center: "CC1234"
 
   tasks:
-    - name: Check if AWS CLI is available
+    - name: Ensure AWS CLI is available on control node
       ansible.builtin.command: aws --version
       register: aws_cli_check
       ignore_errors: yes
       changed_when: false
 
-    - name: Install AWS CLI via yum if missing (RHEL/CentOS)
-      ansible.builtin.yum:
-        name: awscli
-        state: present
-      become: true
+    - name: Fail early if AWS CLI missing on control node
+      ansible.builtin.fail:
+        msg: "AWS CLI not found on control node. Install it (pip install awscli or package) or run this play from a machine with aws configured."
       when: aws_cli_check.rc != 0
-      register: yum_install_result
-      changed_when: yum_install_result.changed
 
-    - name: Re-check AWS CLI after install
-      ansible.builtin.command: aws --version
-      register: aws_cli_check_after
-      ignore_errors: yes
-      changed_when: false
-
-    - name: Fail if AWS CLI still not present
-      ansible.builtin.fail:
-        msg: "AWS CLI not found after attempted install. Please install it manually or ensure package repositories are available."
-      when: aws_cli_check_after.rc != 0
-
-    - name: Get instance info by instance_id (if provided)
+    - name: Describe instances by instance-id (for hosts that have ec2_instance_id)
       ansible.builtin.command: >
         aws ec2 describe-instances
         --region {{ aws_region }}
-        --instance-ids {{ ec2_instance_id }}
+        --instance-ids {{ hostvars[item].ec2_instance_id }}
+        --output json
         --query "Reservations[].Instances[]"
-      register: ec2_info_by_id
-      when: ec2_instance_id is defined
+      loop: "{{ groups['all'] }}"
+      loop_control:
+        label: "{{ item }}"
+      when: hostvars[item].ec2_instance_id is defined
+      register: describe_by_id
       changed_when: false
 
-    - name: Get instance info by private IP (if ec2_instance_id not provided)
-      ansible.builtin.command: >
-        aws ec2 describe-instances
-        --region {{ aws_region }}
-        --filters "Name=private-ip-address,Values={{ ec2_private_ip }}"
-        --query "Reservations[].Instances[]"
-      register: ec2_info_by_ip
-      when:
-        - ec2_instance_id is not defined
-        - ec2_private_ip is defined
-      changed_when: false
-
-    - name: Select instance info result
-      set_fact:
-        ec2_instances: >-
-          {{
-            ( (ec2_info_by_id.stdout | default('[]') | from_json) if (ec2_instance_id is defined) 
-              else (ec2_info_by_ip.stdout | default('[]') | from_json) )
-          }}
-
-    - name: Fail if instance not found
-      ansible.builtin.fail:
-        msg: "No EC2 instance found for this host. Set ec2_instance_id or ec2_private_ip (or check AWS permissions/region)."
-      when: ec2_instances | length == 0
-
-    - name: Build current_tags dict from instance tags (safe)
-      set_fact:
-        current_tags: >-
-          {{
-            dict(
-              (ec2_instances[0].Tags | default([])) | map(attribute='Key') | list
-              | zip(
-                  (ec2_instances[0].Tags | default([])) | map(attribute='Value') | list
-                )
-            )
-          }}
-
-    - name: Compute missing tags
-      set_fact:
-        missing_tags: "{{ required_tags.keys() | difference((current_tags | default({})).keys()) | list }}"
-
-    - name: Show compliance summary
+    - name: Process describe-by-id results (report)
+      vars:
+        result_list: "{{ describe_by_id.results | default([]) }}"
       ansible.builtin.debug:
-        msg: "Host={{ inventory_hostname }} Instance={{ ec2_instances[0].InstanceId | default('unknown') }} Missing={{ missing_tags }} Current={{ current_tags }}"
+        msg: >-
+          Host={{ item.item }}
+          Instance={{ ((item.stdout | default('[]') | from_json)[0].InstanceId) | default('unknown') }}
+          Missing={{ (required_tags.keys() | difference(((item.stdout | default('[]') | from_json)[0].Tags | default([])) | map(attribute='Key') | list)) | list }}
+          Current={{ dict( ((item.stdout | default('[]') | from_json)[0].Tags | default([])) | map(attribute='Key') | list | zip( ((item.stdout | default('[]') | from_json)[0].Tags | default([])) | map(attribute='Value') | list ) ) | default({}) }}
+      loop: "{{ result_list }}"
+      when: result_list | length > 0
+
+    - name: Describe instances by private IP (for hosts that have ec2_private_ip and no ec2_instance_id)
+      ansible.builtin.command: >
+        aws ec2 describe-instances
+        --region {{ aws_region }}
+        --filters "Name=private-ip-address,Values={{ hostvars[item].ec2_private_ip }}"
+        --output json
+        --query "Reservations[].Instances[]"
+      loop: "{{ groups['all'] }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - hostvars[item].ec2_instance_id is not defined
+        - hostvars[item].ec2_private_ip is defined
+      register: describe_by_ip
+      changed_when: false
+
+    - name: Process describe-by-ip results (report)
+      vars:
+        result_list: "{{ describe_by_ip.results | default([]) }}"
+      ansible.builtin.debug:
+        msg: >-
+          Host={{ item.item }}
+          Instance={{ ((item.stdout | default('[]') | from_json)[0].InstanceId) | default('unknown') }}
+          Missing={{ (required_tags.keys() | difference(((item.stdout | default('[]') | from_json)[0].Tags | default([])) | map(attribute='Key') | list)) | list }}
+          Current={{ dict( ((item.stdout | default('[]') | from_json)[0].Tags | default([])) | map(attribute='Key') | list | zip( ((item.stdout | default('[]') | from_json)[0].Tags | default([])) | map(attribute='Value') | list ) ) | default({}) }}
+      loop: "{{ result_list }}"
+      when: result_list | length > 0
+
+    - name: Report hosts missing both ec2_instance_id and ec2_private_ip
+      ansible.builtin.debug:
+        msg: "Host={{ item }} : missing both ec2_instance_id and ec2_private_ip in inventory/host_vars. Add one of them so we can look up the instance."
+      loop: "{{ groups['all'] | reject('match','^$') | list }}"
+      when:
+        - hostvars[item].ec2_instance_id is not defined
+        - hostvars[item].ec2_private_ip is not defined
