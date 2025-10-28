@@ -1,31 +1,22 @@
 ---
-- name: Quick EC2 tag check (run on the node)
+- name: Quick EC2 tag compliance check
   hosts: 10.2.2.135
   gather_facts: no
   become: false
   vars:
     aws_region: "us-east-1"
+    instance_id: "i-0dec3f9b6cc8ae4c1"
     required_tags:
       - owner
       - environment
       - cost_center
 
   tasks:
-    - name: Get instance-id from metadata
-      ansible.builtin.shell: "curl -s http://169.254.169.254/latest/meta-data/instance-id"
-      register: instance_id
-      changed_when: false
-
-    - name: Fail if not running on EC2 or metadata blocked
-      ansible.builtin.fail:
-        msg: "Could not read instance-id from metadata; not an EC2 host or IMDS blocked."
-      when: instance_id.stdout == ""
-
-    - name: Get tag keys for this instance (requires aws CLI / instance role)
+    - name: Get tag keys for this instance (requires AWS CLI / instance role)
       ansible.builtin.command: >
         aws ec2 describe-tags
         --region {{ aws_region }}
-        --filters "Name=resource-id,Values={{ instance_id.stdout }}"
+        --filters "Name=resource-id,Values={{ instance_id }}"
         --query "Tags[].Key"
         --output text
       register: tag_keys
@@ -36,6 +27,6 @@
       ansible.builtin.set_fact:
         missing: "{{ required_tags | difference(tag_keys.stdout.split()) }}"
 
-    - name: Show result
+    - name: Show compliance result
       ansible.builtin.debug:
-        msg: "Instance={{ instance_id.stdout }} Missing={{ missing }} Status={{ 'Compliant' if missing|length == 0 else 'Non-compliant' }}"
+        msg: "Instance={{ instance_id }} Missing={{ missing }} Status={{ 'Compliant' if missing|length == 0 else 'Non-compliant' }}"
