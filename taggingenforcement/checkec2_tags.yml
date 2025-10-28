@@ -1,21 +1,18 @@
 ---
-- name: Quick EC2 tag check (run on the node)
-  hosts: 3.90.164.199
+- name: Quick EC2 tag check (local test)
+  hosts: localhost
+  connection: local
   gather_facts: no
   become: false
   vars:
-    ansible_ssh_timeout: 300   # seconds
     aws_region: "us-east-1"
+    instance_id: "i-0849caa4ca5955163"
     required_tags:
       - owner
       - environment
       - cost_center
 
   tasks:
-    - name: Hardcode instance id (skip metadata)
-      set_fact:
-        instance_id: "i-0dec3f9b6cc8ae4c1"
-
     - name: Get tag keys for this instance
       ansible.builtin.command: >
         aws ec2 describe-tags
@@ -25,7 +22,12 @@
         --output text
       register: tag_keys
       changed_when: false
-      failed_when: tag_keys.rc != 0
+      failed_when: tag_keys.rc != 0 and "'UnauthorizedOperation'" not in tag_keys.stderr
+
+    - name: Handle unauthorized operation error
+      ansible.builtin.fail:
+        msg: "❌ Unauthorized: AWS user/role has no permission for ec2:DescribeTags. Check IAM policy."
+      when: "'UnauthorizedOperation' in tag_keys.stderr"
 
     - name: Compute missing tags
       ansible.builtin.set_fact:
@@ -33,4 +35,4 @@
 
     - name: Show result
       ansible.builtin.debug:
-        msg: "Instance={{ instance_id }} Missing={{ missing }} Status={{ 'Compliant' if missing|length == 0 else 'Non-compliant' }}"
+        msg: "✅ Instance={{ instance_id }} | Missing={{ missing }} | Status={{ 'Compliant' if missing|length == 0 else 'Non-compliant' }}"
