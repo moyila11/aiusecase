@@ -1,6 +1,6 @@
 ---
 - name: Check EC2 tags (run on the EC2 node itself)
-  hosts: 100.27.196.183
+  hosts: 10.2.2.135
   gather_facts: yes
   vars:
     aws_region: "us-east-1"
