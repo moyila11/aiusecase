@@ -1,6 +1,6 @@
 ---
 - name: Quick EC2 tag check (run on the node)
-  hosts: 10.2.2.135
+  hosts: 3.90.164.199
   gather_facts: no
   become: false
   vars:
