@@ -1,18 +1,22 @@
 ---
-- name: Quick EC2 tag compliance check
+- name: Quick EC2 tag check (run on the node)
   hosts: 10.2.2.135
   gather_facts: no
   become: false
   vars:
+    ansible_ssh_timeout: 10   # seconds
     aws_region: "us-east-1"
-    instance_id: "i-0dec3f9b6cc8ae4c1"
     required_tags:
       - owner
       - environment
       - cost_center
 
   tasks:
-    - name: Get tag keys for this instance (requires AWS CLI / instance role)
+    - name: Hardcode instance id (skip metadata)
+      set_fact:
+        instance_id: "i-0dec3f9b6cc8ae4c1"
+
+    - name: Get tag keys for this instance
       ansible.builtin.command: >
         aws ec2 describe-tags
         --region {{ aws_region }}
@@ -27,6 +31,6 @@
       ansible.builtin.set_fact:
         missing: "{{ required_tags | difference(tag_keys.stdout.split()) }}"
 
-    - name: Show compliance result
+    - name: Show result
       ansible.builtin.debug:
         msg: "Instance={{ instance_id }} Missing={{ missing }} Status={{ 'Compliant' if missing|length == 0 else 'Non-compliant' }}"
