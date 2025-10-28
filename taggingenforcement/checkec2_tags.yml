@@ -4,7 +4,7 @@
   gather_facts: no
   become: false
   vars:
-    ansible_ssh_timeout: 10   # seconds
+    ansible_ssh_timeout: 300   # seconds
     aws_region: "us-east-1"
     required_tags:
       - owner
