@@ -20,9 +20,12 @@
         --filters "Name=resource-id,Values={{ instance_id }}"
         --query "Tags[].Key"
         --output text
+      environment:
+        PATH: "/usr/local/bin:/usr/bin:/bin"
       register: tag_keys
       changed_when: false
-      failed_when: tag_keys.rc != 0 and "'UnauthorizedOperation'" not in tag_keys.stderr
+      failed_when: tag_keys.rc != 0
+
 
     - name: Handle unauthorized operation error
       ansible.builtin.fail:
