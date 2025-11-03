@@ -1,9 +1,10 @@
 ---
-- name: Quick EC2 tag check (local test, full path)
+- name: Quick EC2 tag check (AAP controller / localhost)
   hosts: localhost
   connection: local
   gather_facts: no
-  become: false
+  become: true
+
   vars:
     aws_region: "us-east-1"
     instance_id: "i-0849caa4ca5955163"
@@ -11,28 +12,67 @@
       - owner
       - environment
       - cost_center
+    # candidate binary locations (order matters)
+    aws_candidates:
+      - /var/lib/awx/.local/bin/aws
+      - /usr/local/bin/aws
+      - /root/.local/bin/aws
+      - /usr/bin/aws
+      - /bin/aws
 
   tasks:
-    - name: Get tag keys for this instance
-      ansible.builtin.command: >
-        /root/.local/bin/aws ec2 describe-tags
-        --region {{ aws_region }}
-        --filters "Name=resource-id,Values={{ instance_id }}"
-        --query "Tags[].Key"
-        --output text
+    - name: Probe for an available aws binary (search candidates)
+      ansible.builtin.shell: |
+        for p in {{ aws_candidates | join(' ') }}; do
+          if [ -x "$p" ]; then
+            echo "$p"
+            exit 0
+          fi
+        done
+        # fallback: try which in common PATH
+        PATH=/var/lib/awx/.local/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin which aws 2>/dev/null || true
+      register: aws_probe
+      changed_when: false
+
+    - name: Set aws_path fact
+      ansible.builtin.set_fact:
+        aws_path: "{{ (aws_probe.stdout_lines | default([]) | select('match','^/').list | first) | default(aws_probe.stdout | default('') ) | default('') }}"
+
+    - name: Fail early if aws CLI not found for the job runtime
+      ansible.builtin.fail:
+        msg: >
+          aws CLI not found in AAP job environment. Candidate locations checked: {{ aws_candidates }}.
+          Either make aws available to the awx/aap user (install system-wide or place in /var/lib/awx/.local/bin)
+          or use the boto3/amazon.aws module instead.
+      when: aws_path == ""
+
+    - name: Run describe-tags (using discovered aws path)
+      ansible.builtin.shell: |
+        "{{ aws_path }}" ec2 describe-tags --region {{ aws_region }} --filters "Name=resource-id,Values={{ instance_id }}" --query "Tags[].Key" --output text
+      environment:
+        PATH: /var/lib/awx/.local/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+      args:
+        executable: /bin/bash
       register: tag_keys
       changed_when: false
       failed_when: tag_keys.rc != 0 and "'UnauthorizedOperation' not in tag_keys.stderr"
 
-    - name: Handle unauthorized operation error
+    - name: Friendly error if unauthorized to call DescribeTags
       ansible.builtin.fail:
-        msg: "❌ Unauthorized: AWS user/role has no permission for ec2:DescribeTags. Check IAM policy."
+        msg: >
+          Unauthorized: the AWS identity used by this controller/job is blocked from calling ec2:DescribeTags.
+          Ask admins to attach/allow a role with ec2:DescribeTags (or attach a role to the controller instance),
+          or provide an automation credential in AAP.
       when: "'UnauthorizedOperation' in tag_keys.stderr"
+
+    - name: Compute present tag keys (safe)
+      ansible.builtin.set_fact:
+        present_tag_keys: "{{ (tag_keys.stdout | default('') ).split() | default([]) }}"
 
     - name: Compute missing tags
       ansible.builtin.set_fact:
-        missing: "{{ required_tags | difference((tag_keys.stdout | default('')).split()) }}"
+        missing: "{{ required_tags | difference(present_tag_keys | default([])) }}"
 
-    - name: Show result
+    - name: Show compliance result
       ansible.builtin.debug:
-        msg: "✅ Instance={{ instance_id }} | Missing={{ missing }} | Status={{ 'Compliant' if missing|length == 0 else 'Non-compliant' }}"
+        msg: "Instance={{ instance_id }} Present={{ present_tag_keys }} Missing={{ missing }} Status={{ 'Compliant' if (missing|length)==0 else 'Non-compliant' }}"
