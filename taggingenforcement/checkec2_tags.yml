@@ -1,5 +1,5 @@
 ---
-- name: Quick EC2 tag check (local test)
+- name: Quick EC2 tag check (local test, PATH override)
   hosts: localhost
   connection: local
   gather_facts: no
@@ -13,19 +13,20 @@
       - cost_center
 
   tasks:
-    - name: Get tag keys for this instance
-      ansible.builtin.command: >
+    - name: Get tag keys for this instance (use PATH override)
+      ansible.builtin.shell: >
         aws ec2 describe-tags
         --region {{ aws_region }}
         --filters "Name=resource-id,Values={{ instance_id }}"
         --query "Tags[].Key"
         --output text
       environment:
-        PATH: "/usr/local/bin:/usr/bin:/bin"
+        PATH: "/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
+      args:
+        executable: /bin/bash
       register: tag_keys
       changed_when: false
-      failed_when: tag_keys.rc != 0
-
+      failed_when: tag_keys.rc != 0 and "'UnauthorizedOperation' not in tag_keys.stderr"
 
     - name: Handle unauthorized operation error
       ansible.builtin.fail:
@@ -34,7 +35,7 @@
 
     - name: Compute missing tags
       ansible.builtin.set_fact:
-        missing: "{{ required_tags | difference(tag_keys.stdout.split()) }}"
+        missing: "{{ required_tags | difference((tag_keys.stdout | default('')).split()) }}"
 
     - name: Show result
       ansible.builtin.debug:
