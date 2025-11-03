@@ -1,9 +1,10 @@
 ---
-- name: Quick EC2 tag check (use /usr/local/bin/aws)
+- name: Quick EC2 tag check (AWS CLI path fixed inside playbook)
   hosts: localhost
   connection: local
   gather_facts: no
-  become: true           # set to true if the awx/aap job needs root to run aws
+  become: true   # allows root execution if needed
+
   vars:
     aws_region: "us-east-1"
     instance_id: "i-0849caa4ca5955163"
@@ -11,23 +12,24 @@
       - owner
       - environment
       - cost_center
-    aws_path: "/usr/local/bin/aws"
+    # Hardcode the AWS CLI path here (no need to pass externally)
+    aws_cli_path: "/root/.local/bin/aws"
 
   tasks:
-    - name: Ensure configured aws_path exists
+    - name: Ensure configured aws_cli_path exists
       ansible.builtin.stat:
-        path: "{{ aws_path }}"
+        path: "{{ aws_cli_path }}"
       register: aws_stat
       changed_when: false
 
-    - name: Fail if configured aws_path not found
+    - name: Fail if aws CLI binary not found
       ansible.builtin.fail:
-        msg: "aws CLI not found at {{ aws_path }}. Make aws available or use the boto3 module."
+        msg: "aws CLI not found at {{ aws_cli_path }}. Please verify the path or install awscli."
       when: not aws_stat.stat.exists
 
-    - name: Get tag keys for this instance (use absolute aws path)
+    - name: Get tag keys for this instance
       ansible.builtin.shell: >
-        "{{ aws_path }}" ec2 describe-tags
+        "{{ aws_cli_path }}" ec2 describe-tags
         --region {{ aws_region }}
         --filters "Name=resource-id,Values={{ instance_id }}"
         --query "Tags[].Key"
@@ -43,8 +45,8 @@
     - name: Friendly error if unauthorized to call DescribeTags
       ansible.builtin.fail:
         msg: >
-          Unauthorized: the AWS identity used by this controller/job is blocked from calling ec2:DescribeTags.
-          Request an automation role or allow sts:AssumeRole / DescribeTags for the automation principal.
+          ❌ Unauthorized: AWS identity used by this controller/job
+          cannot call ec2:DescribeTags. Add the correct IAM permissions.
       when: "'UnauthorizedOperation' in tag_keys.stderr"
 
     - name: Compute present tag keys
@@ -57,4 +59,8 @@
 
     - name: Show compliance result
       ansible.builtin.debug:
-        msg: "Instance={{ instance_id }} Present={{ present_tag_keys }} Missing={{ missing }} Status={{ 'Compliant' if (missing|length)==0 else 'Non-compliant' }}"
+        msg: >
+          ✅ Instance={{ instance_id }}
+          Present={{ present_tag_keys }}
+          Missing={{ missing }}
+          Status={{ 'Compliant' if (missing|length)==0 else 'Non-compliant' }}
