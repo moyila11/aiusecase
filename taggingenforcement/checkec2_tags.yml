@@ -13,7 +13,8 @@
       - environment
       - cost_center
     # Hardcode the AWS CLI path here (no need to pass externally)
-    aws_cli_path: "/root/.local/bin/aws"
+    aws_cli_path: "/var/lib/awx/.local/bin/aws"
+
 
   tasks:
     - name: Ensure configured aws_cli_path exists
