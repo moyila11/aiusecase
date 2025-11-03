@@ -19,7 +19,7 @@
   tasks:
 
     - name: Check if aws is executable
-      command: /var/lib/awx/.local/bin/aws --version
+      command: sudo /var/lib/awx/.local/bin/aws --version
       become: true
       
     - name: Ensure configured aws_cli_path exists
