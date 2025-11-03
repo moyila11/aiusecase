@@ -17,6 +17,11 @@
 
 
   tasks:
+
+    - name: Check if aws is executable
+      command: /var/lib/awx/.local/bin/aws --version
+      become: true
+      
     - name: Ensure configured aws_cli_path exists
       ansible.builtin.stat:
         path: "{{ aws_cli_path }}"
