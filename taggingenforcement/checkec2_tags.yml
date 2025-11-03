@@ -12,7 +12,6 @@
       - owner
       - environment
       - cost_center
-    # candidate binary locations (order matters)
     aws_candidates:
       - /var/lib/awx/.local/bin/aws
       - /usr/local/bin/aws
@@ -21,22 +20,20 @@
       - /bin/aws
 
   tasks:
-    - name: Probe for an available aws binary (search candidates)
-      ansible.builtin.shell: |
-        for p in {{ aws_candidates | join(' ') }}; do
-          if [ -x "$p" ]; then
-            echo "$p"
-            exit 0
-          fi
-        done
-        # fallback: try which in common PATH
-        PATH=/var/lib/awx/.local/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin which aws 2>/dev/null || true
-      register: aws_probe
+    - name: Check candidate aws binary locations
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ aws_candidates }}"
+      register: aws_stat
       changed_when: false
+      run_once: true
 
-    - name: Set aws_path fact
+    - name: Set aws_path fact from first existing candidate
       ansible.builtin.set_fact:
-        aws_path: "{{ (aws_probe.stdout_lines | default([]) | select('match','^/').list | first) | default(aws_probe.stdout | default('') ) | default('') }}"
+        aws_path: "{{ item.item }}"
+      loop: "{{ aws_stat.results }}"
+      when: item.stat.exists
+      run_once: true
 
     - name: Fail early if aws CLI not found for the job runtime
       ansible.builtin.fail:
@@ -44,7 +41,8 @@
           aws CLI not found in AAP job environment. Candidate locations checked: {{ aws_candidates }}.
           Either make aws available to the awx/aap user (install system-wide or place in /var/lib/awx/.local/bin)
           or use the boto3/amazon.aws module instead.
-      when: aws_path == ""
+      when: aws_path is not defined
+      run_once: true
 
     - name: Run describe-tags (using discovered aws path)
       ansible.builtin.shell: |
@@ -67,7 +65,7 @@
 
     - name: Compute present tag keys (safe)
       ansible.builtin.set_fact:
-        present_tag_keys: "{{ (tag_keys.stdout | default('') ).split() | default([]) }}"
+        present_tag_keys: "{{ (tag_keys.stdout | default('')) | split() | default([]) }}"
 
     - name: Compute missing tags
       ansible.builtin.set_fact:
