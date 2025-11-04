@@ -23,11 +23,11 @@
       register: aws_stat
       changed_when: false
 
-    - name: Fail if aws CLI binary not found
-      become: yes
-      ansible.builtin.fail:
-        msg: "aws CLI not found at {{ aws_cli_path }}. Please verify the path or install awscli."
-      when: not aws_stat.stat.exists or not aws_stat.stat.executable
+    # - name: Fail if aws CLI binary not found
+    #   become: yes
+    #   ansible.builtin.fail:
+    #     msg: "aws CLI not found at {{ aws_cli_path }}. Please verify the path or install awscli."
+    #   when: not aws_stat.stat.exists or not aws_stat.stat.executable
 
     - name: Check AWS CLI version
       ansible.builtin.shell: |
