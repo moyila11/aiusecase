@@ -1,0 +1,37 @@
+---
+
+- name: Check EC2 instance tags
+  hosts: localhost
+  gather_facts: no 
+  vars:
+    required_tags:
+      - "owner"
+      - "environment"
+      - "cost_center"
+ 
+  tasks:
+
+    - name: Get EC2 instance ID from metadata
+      shell: curl -s http://169.254.169.254/latest/meta-data/instance-id
+      register: instance_id
+ 
+    - name: Get tags for this EC2 instance
+      shell: |
+        aws ec2 describe-tags --filters "Name=resource-id,Values={{ instance_id.stdout }}" --region us-east-1 --output json
+      register: tag_output
+ 
+    - name: Parse tag names
+      set_fact:
+        tag_names: "{{ tag_output.stdout | from_json | json_query('Tags[].Key') }}"
+ 
+    - name: Check for missing tags
+      debug:
+        msg: "✅ All required tags are present: {{ required_tags }}"
+      when: required_tags | difference(tag_names) | length == 0
+ 
+    - name: Report missing tags
+      debug:
+        msg: "❌ Missing tags: {{ required_tags | difference(tag_names) }}"
+      when: required_tags | difference(tag_names) | length > 0
+
+ 
