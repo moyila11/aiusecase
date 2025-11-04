@@ -13,7 +13,7 @@
       - environment
       - cost_center
     # Use system-wide AWS CLI path
-    aws_cli_path: "/usr/local/bin"
+    aws_cli_path: "/usr/local/bin/aws"
 
   tasks:
     - name: Verify AWS CLI binary exists and is executable
