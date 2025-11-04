@@ -30,9 +30,14 @@
       when: not aws_stat.stat.exists or not aws_stat.stat.executable
 
     - name: Check AWS CLI version
-      ansible.builtin.command: "{{ aws_cli_path }} --version"
+      ansible.builtin.shell: |
+        export PATH=$PATH:/usr/local/bin:/root/.local/bin
+        aws --version
+      args:
+        executable: /bin/bash
       register: aws_version
       changed_when: false
+
 
     - name: Show AWS CLI version
       ansible.builtin.debug:
