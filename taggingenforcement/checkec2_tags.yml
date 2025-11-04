@@ -1,5 +1,5 @@
 ---
-- name: Quick EC2 tag check (AWS CLI path fixed inside playbook)
+- name: Quick EC2 tag check (use system-wide AWS CLI)
   hosts: localhost
   connection: local
   gather_facts: no
@@ -12,23 +12,11 @@
       - owner
       - environment
       - cost_center
-    aws_cli_path: "/var/lib/awx/.local/bin/aws"
-
-  # 👇 Add this environment block
-  environment:
-    PATH: "/var/lib/awx/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    # Use system-wide AWS CLI path
+    aws_cli_path: "/usr/local/bin/aws"
 
   tasks:
-
-    - name: Check if aws is executable
-      command: "{{ aws_cli_path }} --version"
-      register: aws_check
-      changed_when: false
-
-    - debug:
-        msg: "AWS CLI found and working: {{ aws_check.stdout | default('No output') }}"
-
-    - name: Ensure configured aws_cli_path exists
+    - name: Verify AWS CLI binary exists and is executable
       ansible.builtin.stat:
         path: "{{ aws_cli_path }}"
       register: aws_stat
@@ -37,7 +25,16 @@
     - name: Fail if aws CLI binary not found
       ansible.builtin.fail:
         msg: "aws CLI not found at {{ aws_cli_path }}. Please verify the path or install awscli."
-      when: not aws_stat.stat.exists
+      when: not aws_stat.stat.exists or not aws_stat.stat.executable
+
+    - name: Check AWS CLI version
+      ansible.builtin.command: "{{ aws_cli_path }} --version"
+      register: aws_version
+      changed_when: false
+
+    - name: Show AWS CLI version
+      ansible.builtin.debug:
+        var: aws_version.stdout
 
     - name: Get tag keys for this instance
       ansible.builtin.shell: >
@@ -46,6 +43,8 @@
         --filters "Name=resource-id,Values={{ instance_id }}"
         --query "Tags[].Key"
         --output text
+      environment:
+        PATH: /usr/local/bin:/usr/bin:/bin
       args:
         executable: /bin/bash
       register: tag_keys
