@@ -12,16 +12,22 @@
       - owner
       - environment
       - cost_center
-    # Hardcode the AWS CLI path here (no need to pass externally)
     aws_cli_path: "/var/lib/awx/.local/bin/aws"
 
+  # 👇 Add this environment block
+  environment:
+    PATH: "/var/lib/awx/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
   tasks:
 
     - name: Check if aws is executable
-      command: sudo /var/lib/awx/.local/bin/aws --version
-      become: true
-      
+      command: "{{ aws_cli_path }} --version"
+      register: aws_check
+      changed_when: false
+
+    - debug:
+        msg: "AWS CLI found and working: {{ aws_check.stdout | default('No output') }}"
+
     - name: Ensure configured aws_cli_path exists
       ansible.builtin.stat:
         path: "{{ aws_cli_path }}"
@@ -40,8 +46,6 @@
         --filters "Name=resource-id,Values={{ instance_id }}"
         --query "Tags[].Key"
         --output text
-      environment:
-        PATH: /usr/local/bin:/usr/bin:/bin
       args:
         executable: /bin/bash
       register: tag_keys
