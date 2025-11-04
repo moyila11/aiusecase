@@ -40,8 +40,9 @@
 
    
     - name: Check AWS CLI version
+      become: yes
       ansible.builtin.shell: |
-        /var/lib/awx/.local/bin/aws --version
+        /usr/local/bin/aws --version
       args:
         executable: /bin/bash
       register: aws_version
