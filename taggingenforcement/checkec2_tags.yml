@@ -29,15 +29,23 @@
     #     msg: "aws CLI not found at {{ aws_cli_path }}. Please verify the path or install awscli."
     #   when: not aws_stat.stat.exists or not aws_stat.stat.executable
 
+    # - name: Check AWS CLI version
+    #   ansible.builtin.shell: |
+    #     export PATH=$PATH:/usr/local/bin:/root/.local/bin
+    #     aws --version
+    #   # args:
+    #   #   executable: /bin/bash
+    #   register: aws_version
+    #   changed_when: false
+
+   
     - name: Check AWS CLI version
       ansible.builtin.shell: |
-        export PATH=$PATH:/usr/local/bin:/root/.local/bin
-        aws --version
-      # args:
-      #   executable: /bin/bash
+        /var/lib/awx/.local/bin/aws --version
+      args:
+        executable: /bin/bash
       register: aws_version
       changed_when: false
-
 
     - name: Show AWS CLI version
       ansible.builtin.debug:
